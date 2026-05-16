@@ -4,6 +4,7 @@
 
 get() ->
     #{
-        host => {192, 168, 34, 102},
-        port => 4000 
+      server => "cobalt-mellowed-blossom-1379.fly.dev",
+      host => {192, 168, 34, 102},
+      port => 4000
     }.

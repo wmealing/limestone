@@ -1,53 +1,89 @@
 -module(networking).
--export([post_sensor_data/0]).
+-export([post_sensor_data/1]).
 
 -define(HOST, {192, 168, 34, 102}).
 -define(PORT, 4000).
--define(PATH, "/collect/").
+-define(PATH, "/api/collect/").
 
+do_request(HostName, Port, Options, Request) ->
+    case ssl:connect(HostName, Port, Options) of
+        {ok, Socket} ->
+            io:format("Connected, sending request~n"),
+            case ssl:send(Socket, Request) of
+                ok ->
+                    io:format("Msg sent..~n"),
+                    case recv_all(Socket) of
+                        {ok, Response} ->
+                            ssl:close(Socket),
+                            handle_response(Response);
+                        {error, Reason} ->
+                            ssl:close(Socket),
+                            {error, Reason}
+                    end;
+                {error, Reason} ->
+                    ssl:close(Socket),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
+post_sensor_data(Body) ->
 
-post_sensor_data() ->
-    Temp = 12, 
-    Body = list_to_binary(io_lib:format("{\"sensor_id\": \"1234-1234\", \"value\": ~p}", [Temp])),
+    HostName = "cobalt-mellowed-blossom-1379.fly.dev",
+    Port = 443,
+
+    Options = [
+        {verify, verify_none},
+        {server_name_indication, HostName},
+        {active, false}
+    ],
+
     ContentLength = integer_to_list(byte_size(Body)),
+
+    io:format("PATH: ~p~n", [?PATH]),
+
     Request = iolist_to_binary([
         "POST ", ?PATH, " HTTP/1.0\r\n",
-        "Host: 192.168.34.102:4000\r\n",
+        "Host:", HostName, "\r\n",
         "Content-Type: application/json\r\n",
         "Content-Length: ", ContentLength, "\r\n",
         "\r\n",
         Body
     ]),
-    io:format("Connecting to 192.168.34.102:4000~n"),
-    case gen_tcp:connect(?HOST, ?PORT, [{inet_backend, socket}, {active, false}]) of
-        {ok, Socket} ->
-            io:format("Connected, sending request~n"),
-            ok = gen_tcp:send(Socket, Request),
-            case recv_all(Socket) of
-                {ok, Response} ->
-                    gen_tcp:close(Socket),
-                    handle_response(Response);
-                {error, Reason} ->
-                    gen_tcp:close(Socket),
-                    io:format("Recv error: ~p~n", [Reason]),
-                    {error, Reason}
-            end;
-        {error, Reason} ->
-            io:format("Connect failed: ~p~n", [Reason]),
-            {error, Reason}
+
+    io:format("Connecting to ~p~n", [HostName]),
+
+    Parent = self(),
+    Ref = make_ref(),
+
+    spawn(fun() -> Parent ! {Ref, do_request(HostName, Port, Options, Request)} end),
+
+    receive
+        {Ref, {error, Reason}} ->
+            io:format("Request failed: ~p~n", [Reason]),
+            {error, Reason};
+        {Ref, Result} ->
+            Result
+    after 30000 ->
+        io:format("Request timed out~n"),
+        {error, timeout}
     end.
+
 
 recv_all(Socket) ->
     recv_all(Socket, <<>>).
 
 recv_all(Socket, Acc) ->
-    case gen_tcp:recv(Socket, 0) of
+    case ssl:recv(Socket, 0) of
         {ok, Data} ->
+	    io:format("RCV_ALL DATA: ~p~n", [Data]),
             recv_all(Socket, <<Acc/binary, Data/binary>>);
-        {error, closed} ->
+        {error, -30848} ->
+	    io:format("RCV_ALL CLOSED~n"),
             {ok, Acc};
         {error, Reason} ->
+	    io:format("RCV_ALL ERROR: ~p~n", [Reason]),
             {error, Reason}
     end.
 
