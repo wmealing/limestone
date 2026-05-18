@@ -14,8 +14,8 @@
 -define(ERR,  "\e[1;35m[!]\e[0m \e[105;30m NET-FAIL \e[0m \e[1;35m::\e[0m \e[1;91m").
 
 -define(WIFI_CONFIG, [
-    {ssid, <<"RED-LEADER-2">>},
-    {psk,  <<"Somethinghard55!!">>},
+    {ssid, <<"TEST-NETWORK">>},
+    {psk,  <<"TEST-PASSWORD">>},
     {dhcp_hostname, <<"firstpico">>}
 ]).
 
