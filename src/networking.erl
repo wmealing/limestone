@@ -1,43 +1,55 @@
 -module(networking).
--export([post_sensor_data/1]).
+-export([post_sensor_data/2]).
 
--define(HOST, {192, 168, 34, 102}).
--define(PORT, 4000).
 -define(PATH, "/api/collect/").
+-define(HOST_SSL,  "cobalt-mellowed-blossom-1379.fly.dev").
+-define(PORT_SSL,  443).
+-define(HOST_TCP,  "cobalt-mellowed-blossom-1379.fly.dev").
+-define(PORT_TCP,  80).
 
-do_request(HostName, Port, Options, Request) ->
-    case ssl:connect(HostName, Port, Options) of
+transport_connect(true, Host, Port) ->
+    Options = [{verify, verify_none}, {server_name_indication, Host}, {active, false}],
+    ssl:connect(Host, Port, Options);
+transport_connect(false, Host, Port) ->
+    gen_tcp:connect(Host, Port, [binary, {active, false}, {inet_backend, socket}]).
+
+transport_send(true, Socket, Data)  -> ssl:send(Socket, Data);
+transport_send(false, Socket, Data) -> gen_tcp:send(Socket, Data).
+
+transport_recv(true, Socket)  -> ssl:recv(Socket, 0);
+transport_recv(false, Socket) -> gen_tcp:recv(Socket, 0).
+
+transport_close(true, Socket)  -> ssl:close(Socket);
+transport_close(false, Socket) -> gen_tcp:close(Socket).
+
+do_request(UseSsl, HostName, Port, Request) ->
+    case transport_connect(UseSsl, HostName, Port) of
         {ok, Socket} ->
             io:format("Connected, sending request~n"),
-            case ssl:send(Socket, Request) of
+            case transport_send(UseSsl, Socket, Request) of
                 ok ->
                     io:format("Msg sent..~n"),
-                    case recv_all(Socket) of
+                    case recv_all(UseSsl, Socket) of
                         {ok, Response} ->
-                            ssl:close(Socket),
+                            transport_close(UseSsl, Socket),
                             handle_response(Response);
                         {error, Reason} ->
-                            ssl:close(Socket),
+                            transport_close(UseSsl, Socket),
                             {error, Reason}
                     end;
                 {error, Reason} ->
-                    ssl:close(Socket),
+                    transport_close(UseSsl, Socket),
                     {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
     end.
 
-post_sensor_data(Body) ->
-
-    HostName = "cobalt-mellowed-blossom-1379.fly.dev",
-    Port = 443,
-
-    Options = [
-        {verify, verify_none},
-        {server_name_indication, HostName},
-        {active, false}
-    ],
+post_sensor_data(Body, UseSsl) ->
+    {HostName, Port} = case UseSsl of
+        true  -> {?HOST_SSL, ?PORT_SSL};
+        false -> {?HOST_TCP, ?PORT_TCP}
+    end,
 
     ContentLength = integer_to_list(byte_size(Body)),
 
@@ -45,19 +57,26 @@ post_sensor_data(Body) ->
 
     Request = iolist_to_binary([
         "POST ", ?PATH, " HTTP/1.0\r\n",
-        "Host:", HostName, "\r\n",
+        "Host: ", HostName, "\r\n",
         "Content-Type: application/json\r\n",
         "Content-Length: ", ContentLength, "\r\n",
         "\r\n",
         Body
     ]),
 
-    io:format("Connecting to ~p~n", [HostName]),
+    io:format("Connecting to ~p (ssl=~p)~n", [HostName, UseSsl]),
 
     Parent = self(),
     Ref = make_ref(),
 
-    spawn(fun() -> Parent ! {Ref, do_request(HostName, Port, Options, Request)} end),
+    spawn(fun() ->
+        Result = try
+            do_request(UseSsl, HostName, Port, Request)
+        catch
+            _:Reason -> {error, Reason}
+        end,
+        Parent ! {Ref, Result}
+    end),
 
     receive
         {Ref, {error, Reason}} ->
@@ -71,19 +90,22 @@ post_sensor_data(Body) ->
     end.
 
 
-recv_all(Socket) ->
-    recv_all(Socket, <<>>).
+recv_all(UseSsl, Socket) ->
+    recv_all(UseSsl, Socket, <<>>).
 
-recv_all(Socket, Acc) ->
-    case ssl:recv(Socket, 0) of
+recv_all(UseSsl, Socket, Acc) ->
+    case transport_recv(UseSsl, Socket) of
         {ok, Data} ->
-	    io:format("RCV_ALL DATA: ~p~n", [Data]),
-            recv_all(Socket, <<Acc/binary, Data/binary>>);
+            io:format("RCV_ALL DATA: ~p~n", [Data]),
+            recv_all(UseSsl, Socket, <<Acc/binary, Data/binary>>);
         {error, -30848} ->
-	    io:format("RCV_ALL CLOSED~n"),
+            io:format("RCV_ALL CLOSED~n"),
+            {ok, Acc};
+        {error, closed} ->
+            io:format("RCV_ALL CLOSED~n"),
             {ok, Acc};
         {error, Reason} ->
-	    io:format("RCV_ALL ERROR: ~p~n", [Reason]),
+            io:format("RCV_ALL ERROR: ~p~n", [Reason]),
             {error, Reason}
     end.
 

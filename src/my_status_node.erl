@@ -20,38 +20,38 @@
 ]).
 
 start() ->
+    UseSsl = false,
     io:format("~n"),
     io:format(?YB ++ "  +----------------------------+  " ++ ?R ++ "~n"),
     io:format(?YB ++ "  |  >>> STATUS NODE <<<       |  " ++ ?R ++ "~n"),
     io:format(?YB ++ "  |  pico-w sensor reporter    |  " ++ ?R ++ "~n"),
     io:format(?YB ++ "  +----------------------------+  " ++ ?R ++ "~n~n"),
-    ssl:start(),
+    case UseSsl of
+        true -> ssl:start();
+        false -> ok
+    end,
     BootTime = erlang:monotonic_time(second),
-    loop(BootTime).
+    loop(BootTime, UseSsl).
 
 wait_for_wifi() ->
     case network:wait_for_sta(?WIFI_CONFIG, 15000) of
-        {ok, {Address, _Netmask, _Gateway}} ->
-            io:format(?OK ++ " " ++ ?Y ++ "IP acquired:" ++ ?R ++ " ~p~n", [Address]);
+        {ok, {_Address, _Netmask, _Gateway}} ->
+           ok;
         {error, {already_started, _}} ->
-            io:format(?OK ++ " already connected~n");
+            ok;
         {error, Reason} ->
             io:format(?ERR ++ "~p, retrying..." ++ ?R ++ "~n", [Reason]),
             timer:sleep(3000),
             wait_for_wifi()
     end.
 
-loop(BootTime) ->
+loop(BootTime, UseSsl) ->
     io:format(?INFO ++ ?C ++ "- Starting Wifi" ++ ?R ++ "~n"),
     wait_for_wifi(),
-
-    io:format(?INFO ++ ?C ++ "- Processing sensors" ++ ?R ++ "~n"),
-    process_sensors(),
-
-    io:format(?INFO ++ ?C ++ "- sleeping 20s..." ++ ?R ++ "~n"),
+    process_sensors(UseSsl),
     timer:sleep(20000),
-    loop(BootTime).
+    loop(BootTime, UseSsl).
 
-process_sensors() ->
+process_sensors(UseSsl) ->
     DummyData = dummy_sensor:get_sensor(),
-    networking:post_sensor_data(DummyData).
+    networking:post_sensor_data(DummyData, UseSsl).
