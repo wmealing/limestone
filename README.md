@@ -3,7 +3,7 @@
 
  SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 -->
-# my_status_node
+# Limeestone 
 
 An Erlang application for the **Raspberry Pi Pico W** running on [AtomVM](https://atomvm.net/). It connects to Wi-Fi, reads sensor data, and POSTs it as JSON to a remote HTTP(S) server on a 20-second loop.
 
@@ -16,13 +16,13 @@ An Erlang application for the **Raspberry Pi Pico W** running on [AtomVM](https:
 
 ## Source modules
 
-| Module | Purpose |
-|---|---|
-| `my_status_node` | Entry point — boot banner, Wi-Fi loop, main sensor loop |
-| `networking` | HTTP POST over plain TCP or SSL; handles connect/send/recv/close |
-| `dummy_sensor` | Stub sensor — returns `{"sensor_id":"1","value":"12"}` as JSON |
-| `button` | GPIO helper — reads a push-button on pin 15 (pull-up, active-low) |
-| `config` | Central config map (server hostname, host IP, port) |
+| Module           | Purpose                                                           |
+|------------------|-------------------------------------------------------------------|
+| `my_status_node` | Entry point — boot banner, Wi-Fi loop, main sensor loop           |
+| `networking`     | HTTP POST over plain TCP or SSL; handles connect/send/recv/close  |
+| `dummy_sensor`   | Stub sensor — returns `{"sensor_id":"1","value":"12"}` as JSON    |
+| `button`         | GPIO helper — reads a push-button on pin 15 (pull-up, active-low) |
+| `config`         | Central config map (server hostname, host IP, port)               |
 
 ## Build & flash
 
@@ -70,9 +70,9 @@ Wi-Fi credentials are set in `my_status_node.erl`:
 The target server is set in `networking.erl` (and mirrored in `config.erl`):
 
 ```erlang
--define(HOST_TCP, "cobalt-mellowed-blossom-1379.fly.dev").
+-define(HOST_TCP, "server.fqdn").
 -define(PORT_TCP, 80).
--define(HOST_SSL, "cobalt-mellowed-blossom-1379.fly.dev").
+-define(HOST_SSL, "server.fqdn").
 -define(PORT_SSL, 443).
 ```
 
