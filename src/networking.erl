@@ -7,14 +7,13 @@
 -define(HOST_TCP,  "cobalt-mellowed-blossom-1379.fly.dev").
 -define(PORT_TCP,  80).
 
--define(CONNECT_TIMEOUT, 10000).
 -define(RECV_TIMEOUT, 10000).
 
 transport_connect(true, Host, Port) ->
     Options = [{verify, verify_none}, {server_name_indication, Host}, {active, false}],
     ssl:connect(Host, Port, Options);
 transport_connect(false, Host, Port) ->
-    gen_tcp:connect(Host, Port, [binary, {active, false}, {inet_backend, socket}], ?CONNECT_TIMEOUT).
+    gen_tcp:connect(Host, Port, [binary, {active, false}, {inet_backend, socket}]).
 
 transport_send(true, Socket, Data)  -> ssl:send(Socket, Data);
 transport_send(false, Socket, Data) -> gen_tcp:send(Socket, Data).
