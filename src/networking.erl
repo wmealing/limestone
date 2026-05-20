@@ -94,6 +94,7 @@ recv_all(UseSsl, Socket, Acc) ->
     end.
 
 handle_response(Response) ->
+    io:format("Raw response: ~s~n", [Response]),
     case binary:split(Response, <<"\r\n\r\n">>) of
         [Headers, Body] ->
             [StatusLine | _] = binary:split(Headers, <<"\r\n">>),
