@@ -7,17 +7,20 @@
 -define(HOST_TCP,  "cobalt-mellowed-blossom-1379.fly.dev").
 -define(PORT_TCP,  80).
 
+-define(CONNECT_TIMEOUT, 10000).
+-define(RECV_TIMEOUT, 10000).
+
 transport_connect(true, Host, Port) ->
     Options = [{verify, verify_none}, {server_name_indication, Host}, {active, false}],
     ssl:connect(Host, Port, Options);
 transport_connect(false, Host, Port) ->
-    gen_tcp:connect(Host, Port, [binary, {active, false}, {inet_backend, socket}]).
+    gen_tcp:connect(Host, Port, [binary, {active, false}, {inet_backend, socket}], ?CONNECT_TIMEOUT).
 
 transport_send(true, Socket, Data)  -> ssl:send(Socket, Data);
 transport_send(false, Socket, Data) -> gen_tcp:send(Socket, Data).
 
-transport_recv(true, Socket)  -> ssl:recv(Socket, 0);
-transport_recv(false, Socket) -> gen_tcp:recv(Socket, 0).
+transport_recv(true, Socket)  -> ssl:recv(Socket, 0, ?RECV_TIMEOUT);
+transport_recv(false, Socket) -> gen_tcp:recv(Socket, 0, ?RECV_TIMEOUT).
 
 transport_close(true, Socket)  -> ssl:close(Socket);
 transport_close(false, Socket) -> gen_tcp:close(Socket).
@@ -66,44 +69,26 @@ post_sensor_data(Body, UseSsl) ->
 
     io:format("Connecting to ~p (ssl=~p)~n", [HostName, UseSsl]),
 
-    Parent = self(),
-    Ref = make_ref(),
-
-    spawn(fun() ->
-        Result = try
-            do_request(UseSsl, HostName, Port, Request)
-        catch
-            _:Reason -> {error, Reason}
-        end,
-        Parent ! {Ref, Result}
-    end),
-
-    receive
-        {Ref, {error, Reason}} ->
+    try
+        do_request(UseSsl, HostName, Port, Request)
+    catch
+        _:Reason ->
             io:format("Request failed: ~p~n", [Reason]),
-            {error, Reason};
-        {Ref, Result} ->
-            Result
-    after 30000 ->
-        io:format("Request timed out~n"),
-        {error, timeout}
+            {error, Reason}
     end.
 
 
 recv_all(UseSsl, Socket) ->
-    recv_all(UseSsl, Socket, <<>>).
+    recv_all(UseSsl, Socket, []).
 
 recv_all(UseSsl, Socket, Acc) ->
     case transport_recv(UseSsl, Socket) of
         {ok, Data} ->
-            io:format("RCV_ALL DATA: ~p~n", [Data]),
-            recv_all(UseSsl, Socket, <<Acc/binary, Data/binary>>);
+            recv_all(UseSsl, Socket, [Acc, Data]);
         {error, -30848} ->
-            io:format("RCV_ALL CLOSED~n"),
-            {ok, Acc};
+            {ok, iolist_to_binary(Acc)};
         {error, closed} ->
-            io:format("RCV_ALL CLOSED~n"),
-            {ok, Acc};
+            {ok, iolist_to_binary(Acc)};
         {error, Reason} ->
             io:format("RCV_ALL ERROR: ~p~n", [Reason]),
             {error, Reason}
