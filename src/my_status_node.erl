@@ -30,6 +30,8 @@ start() ->
         true -> ssl:start();
         false -> ok
     end,
+    io:format(?INFO ++ ?C ++ "- Starting Wifi" ++ ?R ++ "~n"),
+    wait_for_wifi(),
     BootTime = erlang:monotonic_time(second),
     loop(BootTime, UseSsl).
 
@@ -46,9 +48,10 @@ wait_for_wifi() ->
     end.
 
 loop(BootTime, UseSsl) ->
-    io:format(?INFO ++ ?C ++ "- Starting Wifi" ++ ?R ++ "~n"),
-    wait_for_wifi(),
-    process_sensors(UseSsl),
+    case process_sensors(UseSsl) of
+        {error, _} -> wait_for_wifi();
+        _ -> ok
+    end,
     timer:sleep(20000),
     loop(BootTime, UseSsl).
 
