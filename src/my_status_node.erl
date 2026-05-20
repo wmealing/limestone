@@ -32,6 +32,7 @@ start() ->
     end,
     io:format(?INFO ++ ?C ++ "- Starting Wifi" ++ ?R ++ "~n"),
     wait_for_wifi(),
+    timer:sleep(2000),
     BootTime = erlang:monotonic_time(second),
     loop(BootTime, UseSsl).
 

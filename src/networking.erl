@@ -7,108 +7,57 @@
 -define(HOST_TCP,  "cobalt-mellowed-blossom-1379.fly.dev").
 -define(PORT_TCP,  80).
 
--define(RECV_TIMEOUT, 10000).
-
-transport_connect(true, Host, Port) ->
-    Options = [{verify, verify_none}, {server_name_indication, Host}, {active, false}],
-    ssl:connect(Host, Port, Options);
-transport_connect(false, Host, Port) ->
-    gen_tcp:connect(Host, Port, [binary, {active, false}, {inet_backend, socket}]).
-
-transport_send(true, Socket, Data)  -> ssl:send(Socket, Data);
-transport_send(false, Socket, Data) -> gen_tcp:send(Socket, Data).
-
-transport_recv(true, Socket)  -> ssl:recv(Socket, 0, ?RECV_TIMEOUT);
-transport_recv(false, Socket) -> gen_tcp:recv(Socket, 0, ?RECV_TIMEOUT).
-
-transport_close(true, Socket)  -> ssl:close(Socket);
-transport_close(false, Socket) -> gen_tcp:close(Socket).
-
-do_request(UseSsl, HostName, Port, Request) ->
-    case transport_connect(UseSsl, HostName, Port) of
-        {ok, Socket} ->
-            io:format("Connected, sending request~n"),
-            case transport_send(UseSsl, Socket, Request) of
-                ok ->
-                    io:format("Msg sent..~n"),
-                    case recv_all(UseSsl, Socket) of
-                        {ok, Response} ->
-                            transport_close(UseSsl, Socket),
-                            handle_response(Response);
-                        {error, Reason} ->
-                            transport_close(UseSsl, Socket),
-                            {error, Reason}
-                    end;
+post_sensor_data(Body, UseSsl) ->
+    {Protocol, Host, Port} = case UseSsl of
+        true  -> {https, ?HOST_SSL, ?PORT_SSL};
+        false -> {http,  ?HOST_TCP, ?PORT_TCP}
+    end,
+    io:format("Connecting to ~p (ssl=~p)~n", [Host, UseSsl]),
+    case ahttp_client:connect(Protocol, Host, Port, [{active, false}, {inet_backend, socket}]) of
+        {ok, Conn} ->
+            Headers = [{<<"Content-Type">>, <<"application/json">>}],
+            case ahttp_client:request(Conn, <<"POST">>, ?PATH, Headers, Body) of
+                {ok, Conn2, Ref} ->
+                    Result = collect_response(Conn2, Ref, undefined, []),
+                    ahttp_client:close(Conn2),
+                    Result;
                 {error, Reason} ->
-                    transport_close(UseSsl, Socket),
+                    io:format("Request failed: ~p~n", [Reason]),
                     {error, Reason}
             end;
+        {error, {gen_tcp, enoname} = Reason} ->
+            io:format("DNS lookup failed, retrying in 3s~n"),
+            timer:sleep(3000),
+            post_sensor_data(Body, UseSsl);
         {error, Reason} ->
+            io:format("Connect failed: ~p~n", [Reason]),
             {error, Reason}
     end.
 
-post_sensor_data(Body, UseSsl) ->
-    {HostName, Port} = case UseSsl of
-        true  -> {?HOST_SSL, ?PORT_SSL};
-        false -> {?HOST_TCP, ?PORT_TCP}
-    end,
-
-    ContentLength = integer_to_list(byte_size(Body)),
-
-    io:format("PATH: ~p~n", [?PATH]),
-
-    Request = iolist_to_binary([
-        "POST ", ?PATH, " HTTP/1.0\r\n",
-        "Host: ", HostName, "\r\n",
-        "Content-Type: application/json\r\n",
-        "Content-Length: ", ContentLength, "\r\n",
-        "\r\n",
-        Body
-    ]),
-
-    io:format("Connecting to ~p (ssl=~p)~n", [HostName, UseSsl]),
-
-    try
-        do_request(UseSsl, HostName, Port, Request)
-    catch
-        _:Reason ->
-            io:format("Request failed: ~p~n", [Reason]),
-            {error, Reason}
-    end.
-
-
-recv_all(UseSsl, Socket) ->
-    recv_all(UseSsl, Socket, []).
-
-recv_all(UseSsl, Socket, Acc) ->
-    case transport_recv(UseSsl, Socket) of
-        {ok, Data} ->
-            recv_all(UseSsl, Socket, [Acc, Data]);
-        {error, -30848} ->
-            {ok, iolist_to_binary(Acc)};
-        {error, closed} ->
-            {ok, iolist_to_binary(Acc)};
+collect_response(Conn, Ref, Status, BodyAcc) ->
+    case ahttp_client:recv(Conn, 0) of
+        {ok, Conn2, Responses} ->
+            process_responses(Conn2, Ref, Status, BodyAcc, Responses);
+        {error, {_, closed}} ->
+            finalize(Status, BodyAcc);
         {error, Reason} ->
-            io:format("RCV_ALL ERROR: ~p~n", [Reason]),
+            io:format("Recv error: ~p~n", [Reason]),
             {error, Reason}
     end.
 
-handle_response(Response) ->
-    io:format("Raw response: ~s~n", [Response]),
-    case binary:split(Response, <<"\r\n\r\n">>) of
-        [Headers, Body] ->
-            [StatusLine | _] = binary:split(Headers, <<"\r\n">>),
-            Code = parse_status_code(StatusLine),
-            io:format("HTTP ~p~n", [Code]),
-            io:format("Body: ~s~n", [Body]),
-            {Code, Body};
-        _ ->
-            io:format("Unexpected response format~n"),
-            {error, bad_response}
-    end.
+process_responses(Conn, Ref, Status, BodyAcc, []) ->
+    collect_response(Conn, Ref, Status, BodyAcc);
+process_responses(_Conn, _Ref, Status, BodyAcc, [{done, _} | _]) ->
+    finalize(Status, BodyAcc);
+process_responses(Conn, Ref, _Status, BodyAcc, [{status, Ref, Code} | Rest]) ->
+    process_responses(Conn, Ref, Code, BodyAcc, Rest);
+process_responses(Conn, Ref, Status, BodyAcc, [{data, _, Chunk} | Rest]) ->
+    process_responses(Conn, Ref, Status, [BodyAcc, Chunk], Rest);
+process_responses(Conn, Ref, Status, BodyAcc, [_ | Rest]) ->
+    process_responses(Conn, Ref, Status, BodyAcc, Rest).
 
-parse_status_code(StatusLine) ->
-    case binary:split(StatusLine, <<" ">>, [global]) of
-        [_, CodeBin | _] -> binary_to_integer(CodeBin);
-        _ -> 0
-    end.
+finalize(Status, BodyAcc) ->
+    Body = iolist_to_binary(BodyAcc),
+    io:format("HTTP ~p~n", [Status]),
+    io:format("Body: ~s~n", [Body]),
+    {Status, Body}.
