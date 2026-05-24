@@ -20,7 +20,8 @@ start_link() ->
 %% init returns immediately with defaults; config is fetched on first message.
 init([]) ->
     Queue = load_queue(),
-    self() ! fetch_config,
+    StartJitter = erlang:phash2(erlang:monotonic_time(), 10001),
+    erlang:send_after(StartJitter, self(), fetch_config),
     {ok, #{config          => config:defaults(),
            last_config_time => 0,
            queue            => Queue}}.
