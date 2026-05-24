@@ -20,7 +20,7 @@ prep-image:
 	@echo "REBOOTING DEVICE (please wait)"
 	@picotool reboot -f  -u
 	@echo "Please wait..."
-	@sleep 3
+	@sleep 5 
 	@rsync -v --progress ./data/AtomVM*.uf2 $$RP2
 	@echo "Please wait..."
 	@sleep 3
@@ -39,8 +39,18 @@ flash-client:
 	@rebar3 atomvm pico_flash	
 	@echo "COMPLETE"
 
+build:
+	rebar3 atomvm packbeam
+
+run:
+	atomvm ./_build/default/lib/my_status_node.avm
+
+clean:
+	rebar3 clean
+	rm -f _build/default/lib/my_status_node/my_status_node.avm
+
 build-image:
-	rebar3 compile 
+	rebar3 compile
 
 observe:
 	screen $$DEVICE
