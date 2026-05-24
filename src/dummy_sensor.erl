@@ -15,7 +15,11 @@
 %%% API
 %%%===================================================================
 get_sensor() ->
-    <<"{\"sensor_id\": \"1\", \"value\": \"12\"}">>.
+    Id = sensor_id(),
+    <<"{\"sensor_id\": \"", Id/binary, "\", \"value\": \"12\"}">>.
+
+%% Stub — replace with runtime or compile-time lookup when ready.
+sensor_id() -> <<"ABCD">>.
 
 %%--------------------------------------------------------------------
 %% @doc
