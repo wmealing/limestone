@@ -10,7 +10,7 @@ defaults() ->
 
 parse(Json) ->
     Defaults = defaults(),
-    Interval = case extract_integer(<<"update_interval">>, Json) of
+    Interval = case extract_integer(<<"update-interval">>, Json) of
         {ok, Iv} ->
             io:format("[*] update_interval parsed: ~p~n", [Iv]),
             Iv;
@@ -19,7 +19,7 @@ parse(Json) ->
                 [maps:get(update_interval, Defaults)]),
             maps:get(update_interval, Defaults)
     end,
-    Server = case extract_string(<<"update_server">>, Json) of
+    Server = case extract_string(<<"update-server">>, Json) of
         {ok, Sv} -> binary_to_list(Sv);
         nomatch   -> maps:get(update_server, Defaults)
     end,
