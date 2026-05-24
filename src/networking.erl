@@ -1,22 +1,32 @@
 -module(networking).
--export([post_sensor_data/2]).
+-export([get_config/1, post_sensor_data/2]).
 
--define(PATH, "/api/collect/").
--define(HOST_SSL,  "cobalt-mellowed-blossom-1379.fly.dev").
--define(PORT_SSL,  443).
--define(HOST_TCP,  "cobalt-mellowed-blossom-1379.fly.dev").
--define(PORT_TCP,  80).
+get_config(Url) ->
+    {Host, Port, Path} = parse_url(Url),
+    case ahttp_client:connect(http, Host, Port, [{active, false}, {inet_backend, socket}]) of
+        {ok, Conn} ->
+            case ahttp_client:request(Conn, <<"GET">>, list_to_binary(Path), [], <<>>) of
+                {ok, Conn2, Ref} ->
+                    Result = collect_response(Conn2, Ref, undefined, []),
+                    ahttp_client:close(Conn2),
+                    case Result of
+                        {200, Body} -> {ok, Body};
+                        {Status, _} -> {error, {http_status, Status}}
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
-post_sensor_data(Body, UseSsl) ->
-    {Protocol, Host, Port} = case UseSsl of
-        true  -> {https, ?HOST_SSL, ?PORT_SSL};
-        false -> {http,  ?HOST_TCP, ?PORT_TCP}
-    end,
-    io:format("Connecting to ~p (ssl=~p)~n", [Host, UseSsl]),
-    case ahttp_client:connect(Protocol, Host, Port, [{active, false}, {inet_backend, socket}]) of
+post_sensor_data(Body, Url) ->
+    {Host, Port, Path} = parse_url(Url),
+    io:format("Connecting to ~s:~p~n", [Host, Port]),
+    case ahttp_client:connect(http, Host, Port, [{active, false}, {inet_backend, socket}]) of
         {ok, Conn} ->
             Headers = [{<<"Content-Type">>, <<"application/json">>}],
-            case ahttp_client:request(Conn, <<"POST">>, ?PATH, Headers, Body) of
+            case ahttp_client:request(Conn, <<"POST">>, list_to_binary(Path), Headers, Body) of
                 {ok, Conn2, Ref} ->
                     Result = collect_response(Conn2, Ref, undefined, []),
                     ahttp_client:close(Conn2),
@@ -25,14 +35,34 @@ post_sensor_data(Body, UseSsl) ->
                     io:format("Request failed: ~p~n", [Reason]),
                     {error, Reason}
             end;
-        {error, {gen_tcp, enoname} = Reason} ->
-            io:format("DNS lookup failed, retrying in 3s~n"),
-            timer:sleep(3000),
-            post_sensor_data(Body, UseSsl);
         {error, Reason} ->
             io:format("Connect failed: ~p~n", [Reason]),
             {error, Reason}
     end.
+
+parse_url("http://"  ++ Rest) -> parse_host_port_path(Rest, 80);
+parse_url("https://" ++ Rest) -> parse_host_port_path(Rest, 443).
+
+parse_host_port_path(Rest, DefaultPort) ->
+    {HostPort, Path} = split_at_slash(Rest),
+    {Host, Port} = split_host_port(HostPort, DefaultPort),
+    {Host, Port, "/" ++ Path}.
+
+split_at_slash(Str) -> split_at_slash(Str, []).
+split_at_slash([$/ | Rest], Acc) -> {lists:reverse(Acc), Rest};
+split_at_slash([C   | Rest], Acc) -> split_at_slash(Rest, [C | Acc]);
+split_at_slash([],           Acc) -> {lists:reverse(Acc), ""}.
+
+split_host_port(HostPort, Default) ->
+    case split_at_colon(HostPort) of
+        {Host, ""}      -> {Host, Default};
+        {Host, PortStr} -> {Host, list_to_integer(PortStr)}
+    end.
+
+split_at_colon(Str) -> split_at_colon(Str, []).
+split_at_colon([$: | Rest], Acc) -> {lists:reverse(Acc), Rest};
+split_at_colon([C  | Rest], Acc) -> split_at_colon(Rest, [C | Acc]);
+split_at_colon([],          Acc) -> {lists:reverse(Acc), ""}.
 
 collect_response(Conn, Ref, Status, BodyAcc) ->
     case ahttp_client:recv(Conn, 0) of
