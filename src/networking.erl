@@ -3,7 +3,7 @@
 
 get_config(Url) ->
     {Host, Port, Path} = parse_url(Url),
-    case ahttp_client:connect(http, Host, Port, [{active, false}, {inet_backend, socket}]) of
+    case ahttp_client:connect(http, Host, Port, [{active, false}, {inet_backend, socket}, {timeout, 10000}]) of
         {ok, Conn} ->
             case ahttp_client:request(Conn, <<"GET">>, list_to_binary(Path), [], <<>>) of
                 {ok, Conn2, Ref} ->
@@ -23,7 +23,7 @@ get_config(Url) ->
 post_sensor_data(Body, Url) ->
     {Host, Port, Path} = parse_url(Url),
     io:format("Connecting to ~s:~p~n", [Host, Port]),
-    case ahttp_client:connect(http, Host, Port, [{active, false}, {inet_backend, socket}]) of
+    case ahttp_client:connect(http, Host, Port, [{active, false}, {inet_backend, socket}, {timeout, 10000}]) of
         {ok, Conn} ->
             Headers = [{<<"Content-Type">>, <<"application/json">>}],
             case ahttp_client:request(Conn, <<"POST">>, list_to_binary(Path), Headers, Body) of

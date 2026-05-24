@@ -46,6 +46,7 @@ fetch_config(Retries) ->
 %% Main loop — drain old queue, post current reading, sleep, re-fetch config daily.
 report_loop(Config, LastConfigTime, Queue) ->
     Payload = add_timestamp(dummy_sensor:get_sensor()),
+    io:format(?INFO ++ ?C ++ " Sending: ~s" ++ ?R ++ "~n", [Payload]),
     Queue2  = drain_queue(Config, Queue),
     Queue3  = case post_with_retry(Payload, maps:get(update_server, Config), 3) of
         ok    -> Queue2;
@@ -87,7 +88,7 @@ post_with_retry(Payload, Url, Retries) ->
 drain_queue(_Config, []) -> [];
 drain_queue(Config, [Item | Rest] = Queue) ->
     case networking:post_sensor_data(Item, maps:get(update_server, Config)) of
-        {200, _} ->
+        {Status, _} when Status =:= 200; Status =:= 202 ->
             io:format(?OK ++ ?C ++ " Drained queued item" ++ ?R ++ "~n"),
             drain_queue(Config, Rest);
         _ ->
@@ -111,7 +112,8 @@ add_timestamp(JsonBin) ->
     <<Base:Size/binary, _>> = JsonBin,
     <<Base/binary, ",\"captured_at\":", Ts/binary, "}">>.
 
-%% File I/O is not available in AtomVM Unix; queue is in-memory only.
+%% Not yet implemented — AtomVM file I/O support is unconfirmed.
+%% Intended to persist the queue across reboots once file support is available.
 save_queue(_Queue) -> ok.
 
 load_queue() -> [].
