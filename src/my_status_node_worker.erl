@@ -20,7 +20,7 @@ start_link() ->
 %% init returns immediately with defaults; config is fetched on first message.
 init([]) ->
     Queue = load_queue(),
-    StartJitter = erlang:phash2(erlang:monotonic_time(), 10001),
+    StartJitter = erlang:system_time(millisecond) rem 10001,
     erlang:send_after(StartJitter, self(), fetch_config),
     {ok, #{config          => config:defaults(),
            last_config_time => 0,
@@ -112,7 +112,7 @@ post_with_retry(Payload, Url, Retries, Delay) ->
 
 %% Sleep for Delay ms plus a random jitter of up to half the delay.
 backoff_sleep(Delay) ->
-    Jitter = erlang:phash2(erlang:monotonic_time(), Delay div 2 + 1),
+    Jitter = erlang:system_time(millisecond) rem (Delay div 2 + 1),
     timer:sleep(Delay + Jitter).
 
 %% Drain queued payloads FIFO; stops on first failure.
