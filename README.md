@@ -3,7 +3,7 @@
 
  SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
 -->
-# Limeestone 
+# Limestone 
 
 An Erlang application for the **Raspberry Pi Pico W** running on [AtomVM](https://atomvm.net/). It connects to Wi-Fi, reads sensor data, and POSTs it as JSON to a remote HTTP(S) server on a 20-second loop.
 
